@@ -3,9 +3,6 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    paths:
-      - "gas-suppression-pro.zip"
-      - ".github/workflows/build-apk.yml"
 
 jobs:
   build:
@@ -17,24 +14,55 @@ jobs:
 
       - name: Extract Android project
         run: |
-          mkdir -p project
+          rm -rf project
+          mkdir project
           unzip -o gas-suppression-pro.zip -d project
 
-          echo "Searching for Gradle project..."
-          find project -name gradlew -type f
-
-      - name: Find project directory
+      - name: Find Android project
         run: |
-          GRADLEW=$(find project -name gradlew -type f | head -n 1)
-          if [ -z "$GRADLEW" ]; then
-            echo "gradlew not found!"
+          SETTINGS=$(find project -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "Android project not found!"
+            find project -maxdepth 3 -type f | head -100
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$GRADLEW")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "Project found at: $PROJECT_DIR"
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Android project found: $PROJECT_DIR"
 
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug --stacktrace
+
+      - name: Find APK
+        run: |
+          find "$PROJECT_DIR" -type f -name "*.apk" -print
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gas-Suppression-Pro-APK
+          path: "${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk"
+          if-no-files-found: error
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
